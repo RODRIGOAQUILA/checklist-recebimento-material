@@ -125,14 +125,6 @@ select,input,textarea{width:100%;padding:11px 12px;border-radius:10px;border:1px
   </div>
 
   <div class="section">
-    <h2>ACONDICIONAMENTO DO MATERIAL</h2>
-    <div class="photoGrid">
-      <div id="acond1Slot"></div>
-      <div id="acond2Slot"></div>
-    </div>
-  </div>
-
-  <div class="section">
     <h2>ASSINATURA DO RECEBEDOR</h2>
     <canvas class="signature" id="sigRecebedor"></canvas>
     <button type="button" class="main save noPrint" style="margin-top:10px" onclick="clearSig()">LIMPAR ASSINATURA</button>
@@ -153,7 +145,7 @@ const METER=new Set(["108010176", "108010180", "108010183", "108010022", "108010
 
 const PHOTO_DB='ChecklistRecebMaterial_Photos_DB_v1';
 const PHOTO_STORE='photos';
-let timer=null;
+let timer=null,isClearing=false;
 let signatureSaved='',signatureTouched=false;
 
 function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
@@ -230,17 +222,18 @@ function addMaterial(data={}){
       <div><label>UNIDADE</label><input class="unit" readonly></div>
     </div>
     <div class="photoGrid genericPhoto">${photoSlot(uid+'g1','FOTO DO MATERIAL')}</div>
+    <div class="photoGrid acondPhoto">${photoSlot(uid+'acond1','FOTO DO ACONDICIONAMENTO DO MATERIAL')}</div>
     <div class="conditional hidden"></div>
     <button type="button" class="main remove noPrint" style="margin-top:10px" onclick="removeMaterial(this)">EXCLUIR MATERIAL</button>`;
   document.getElementById('materials').appendChild(d);
-  bindPhoto(uid+'g1');setupMaterialCombo(d);
+  bindPhoto(uid+'g1');bindPhoto(uid+'acond1');setupMaterialCombo(d);
   d.querySelector('.qty').addEventListener('input',()=>{updateConditional(d);scheduleSave()});
   updateConditional(d);
 }
 
 async function removeMaterial(btn){
   const card=btn.closest('.itemCard'),u=card.dataset.id;
-  const ids=[u+'g1',u+'t1',u+'t2',u+'t3',u+'t4',u+'med1'];
+  const ids=[u+'g1',u+'acond1',u+'t1',u+'t2',u+'t3',u+'t4',u+'med1'];
   await Promise.all(ids.map(deletePhoto));card.remove();scheduleSave();
 }
 
@@ -336,7 +329,13 @@ function collect(){
   return o;
 }
 function scheduleSave(){clearTimeout(timer);timer=setTimeout(save,250)}
-function save(){try{localStorage.setItem('checklistRecebimentoMaterial',JSON.stringify(collect()));document.getElementById('saveStatus').textContent='Salvo automaticamente neste dispositivo, incluindo fotos.'}catch(e){console.error(e)}}
+function save(){
+  if(isClearing)return;
+  try{
+    localStorage.setItem('checklistRecebimentoMaterial',JSON.stringify(collect()));
+    document.getElementById('saveStatus').textContent='Salvo automaticamente neste dispositivo, incluindo fotos.';
+  }catch(e){console.error(e)}
+}
 
 function restore(){
   try{
@@ -355,21 +354,49 @@ function restore(){
 }
 
 async function clearAll(){
-  if(!confirm('Deseja realmente limpar todo o check list?'))return;
-  clearTimeout(timer);localStorage.removeItem('checklistRecebimentoMaterial');await clearPhotoDB();
-  location.reload();
+  if(!confirm('Deseja realmente limpar todo o check list? Esta ação apagará campos, materiais, assinatura e fotos salvas neste dispositivo.'))return;
+  try{
+    isClearing=true;
+    clearTimeout(timer);
+
+    // Apaga o rascunho e TODAS as fotos persistidas.
+    localStorage.removeItem('checklistRecebimentoMaterial');
+    await clearPhotoDB();
+
+    // Limpa a interface antes de reiniciar.
+    document.querySelectorAll('input').forEach(el=>{
+      if(el.type==='file') el.value='';
+      else el.value='';
+    });
+    document.querySelectorAll('select').forEach(el=>el.selectedIndex=0);
+    document.querySelectorAll('.preview').forEach(p=>p.innerHTML='');
+    document.getElementById('materials').innerHTML='';
+
+    signatureTouched=false;
+    signatureSaved='';
+    const c=document.getElementById('sigRecebedor');
+    if(c&&c.getContext)c.getContext('2d').clearRect(0,0,c.width,c.height);
+
+    // Volta ao estado inicial com somente 1 material.
+    addMaterial();
+    goScreen(1);
+    document.getElementById('saveStatus').textContent='Check list limpo. Inicie um novo preenchimento.';
+
+    // Libera o autosave somente depois do reset visual.
+    setTimeout(()=>{isClearing=false},500);
+  }catch(e){
+    console.error(e);
+    isClearing=false;
+    alert('Não foi possível limpar completamente o check list. Tente novamente.');
+  }
 }
 
 document.querySelectorAll('input,select,textarea').forEach(e=>e.addEventListener('input',scheduleSave));
 setupSignature();
-document.getElementById('acond1Slot').innerHTML=photoSlot('acond1','FOTO ACONDICIONAMENTO 1');
-document.getElementById('acond2Slot').innerHTML=photoSlot('acond2','FOTO ACONDICIONAMENTO 2');
-bindPhoto('acond1');bindPhoto('acond2');
-
 const recovered=restore();
 if(!recovered){addMaterial();goScreen(1)}
-window.addEventListener('beforeunload',()=>{clearTimeout(timer);save()});
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){clearTimeout(timer);save()}});
+window.addEventListener('beforeunload',()=>{if(!isClearing){clearTimeout(timer);save()}});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&!isClearing){clearTimeout(timer);save()}});
 window.addEventListener('resize',()=>{if(!document.getElementById('screen2').classList.contains('hidden'))resizeSignature()});
 </script>
 </div>
