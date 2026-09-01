@@ -125,6 +125,23 @@ select,input,textarea{width:100%;padding:11px 12px;border-radius:10px;border:1px
   </div>
 
   <div class="section">
+    <h2>LISTA DE MATERIAIS RECEBIDOS</h2>
+    <p class="hint">Resumo automático dos materiais informados neste recebimento.</p>
+    <div style="overflow-x:auto">
+      <table id="materialsSummary" style="width:100%;border-collapse:collapse;min-width:720px">
+        <thead><tr>
+          <th style="text-align:left;padding:9px;border-bottom:1px solid #475569">CÓDIGO</th>
+          <th style="text-align:left;padding:9px;border-bottom:1px solid #475569">DESCRIÇÃO DO MATERIAL</th>
+          <th style="text-align:center;padding:9px;border-bottom:1px solid #475569">QTD</th>
+          <th style="text-align:left;padding:9px;border-bottom:1px solid #475569">Nº NF</th>
+          <th style="text-align:left;padding:9px;border-bottom:1px solid #475569">Nº PT</th>
+        </tr></thead>
+        <tbody id="materialsSummaryBody"><tr><td colspan="5" class="hint" style="padding:12px">Nenhum material informado.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
     <h2>ASSINATURA DO RECEBEDOR</h2>
     <canvas class="signature" id="sigRecebedor"></canvas>
     <button type="button" class="main save noPrint" style="margin-top:10px" onclick="clearSig()">LIMPAR ASSINATURA</button>
@@ -317,6 +334,28 @@ function setupSignature(){
 }
 function clearSig(){const c=document.getElementById('sigRecebedor');c.getContext('2d').clearRect(0,0,c.width,c.height);signatureTouched=false;signatureSaved='';scheduleSave()}
 
+function updateMaterialsSummary(){
+  const body=document.getElementById('materialsSummaryBody'); if(!body)return;
+  const nf=document.getElementById('numeroNF')?.value||'';
+  const pt=document.getElementById('numeroPT')?.value||'';
+  const rows=[];
+  document.querySelectorAll('#materials .itemCard').forEach(c=>{
+    const raw=c.querySelector('.materialInput')?.value||'';
+    const code=codeOf(raw);
+    const info=MATERIALS[code];
+    const desc=info?.desc || raw.replace(/^\d+\s*-\s*/,'').trim();
+    const qty=c.querySelector('.qty')?.value||'';
+    if(raw.trim()||qty)rows.push({code,desc,qty,nf,pt});
+  });
+  body.innerHTML=rows.length?rows.map(r=>`<tr>
+    <td style="padding:9px;border-bottom:1px solid rgba(255,255,255,.10)">${escapeHtml(r.code)}</td>
+    <td style="padding:9px;border-bottom:1px solid rgba(255,255,255,.10)">${escapeHtml(r.desc)}</td>
+    <td style="padding:9px;text-align:center;border-bottom:1px solid rgba(255,255,255,.10)">${escapeHtml(r.qty)}</td>
+    <td style="padding:9px;border-bottom:1px solid rgba(255,255,255,.10)">${escapeHtml(r.nf)}</td>
+    <td style="padding:9px;border-bottom:1px solid rgba(255,255,255,.10)">${escapeHtml(r.pt)}</td>
+  </tr>`).join(''):'<tr><td colspan="5" class="hint" style="padding:12px">Nenhum material informado.</td></tr>';
+}
+
 function collect(){
   const ids=['base','destinoMaterial','empresaRecebedora','empresaEntregadora','recebedor','entregador','numeroNF','numeroPT'];
   const o={fields:{},materials:[],signature:signatureSaved,screen:document.getElementById('screen2').classList.contains('hidden')?1:2};
@@ -328,7 +367,7 @@ function collect(){
   if(signatureTouched){try{o.signature=document.getElementById('sigRecebedor').toDataURL('image/png')}catch(e){}}
   return o;
 }
-function scheduleSave(){clearTimeout(timer);timer=setTimeout(save,250)}
+function scheduleSave(){updateMaterialsSummary();clearTimeout(timer);timer=setTimeout(save,250)}
 function save(){
   if(isClearing)return;
   try{
@@ -392,9 +431,12 @@ async function clearAll(){
 }
 
 document.querySelectorAll('input,select,textarea').forEach(e=>e.addEventListener('input',scheduleSave));
+document.getElementById('numeroNF').addEventListener('input',updateMaterialsSummary);
+document.getElementById('numeroPT').addEventListener('input',updateMaterialsSummary);
 setupSignature();
 const recovered=restore();
 if(!recovered){addMaterial();goScreen(1)}
+updateMaterialsSummary();
 window.addEventListener('beforeunload',()=>{if(!isClearing){clearTimeout(timer);save()}});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&!isClearing){clearTimeout(timer);save()}});
 window.addEventListener('resize',()=>{if(!document.getElementById('screen2').classList.contains('hidden'))resizeSignature()});
